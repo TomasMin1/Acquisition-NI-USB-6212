@@ -1,3 +1,5 @@
+#Testing code to see behaviour without DAQ
+
 import threading
 import numpy as np
 import queue
@@ -12,18 +14,18 @@ from PyQt5.QtGui import QTransform
 
 # --- Configuration ---
 fs = 44150
-chunk_duration = 3               # seconds
+chunk_duration = 2               # seconds
 chunk_samples = int(chunk_duration * fs)
 threshold = 0.5
-channels = ["ai0", "ai1"]
+channels = ["ai0", "ai1"]        # Channels to aquire from "ai0", "ai1" in my case
 spectro_channel_idx = 0
 T_total = 10                     # total acquisition time in seconds
 output_dir = "simulated_chunks"
 os.makedirs(output_dir, exist_ok=True)
 
-# Shared data queue
+# queues
 data_queue = queue.Queue()
-stop_event = threading.Event()  # used to stop acquisition after T_total
+stop_event = threading.Event()  # stop acquisition after T_total
 
 # --- Simulate data ---
 def generate_fake_data(num_channels, num_samples, fs):
@@ -43,28 +45,38 @@ def is_above_threshold(data, channel_idx, thresh):
 
 # --- Acquisition thread (simulated) ---
 def acquisition_thread():
-    i = 0
-    start_time = time.time()
-    while not stop_event.is_set():
-        elapsed = time.time() - start_time
-        if elapsed >= T_total:
-            stop_event.set()
-            break
+    print(f"Starting acquisition for {T_total} seconds (chunk size = {chunk_duration}s)...")
 
-        time.sleep(chunk_duration)  # Simulate DAQ delay
+    total_samples = int(fs * T_total)
+    total_chunks = total_samples // chunk_samples
+    i = 0
+
+    start_time = time.time()
+
+    for _ in range(total_chunks):
+        chunk_start = time.time()
+
+        # Simulate data acquisition
         data = generate_fake_data(len(channels), chunk_samples, fs)
 
         if is_above_threshold(data, spectro_channel_idx, threshold):
-            print(f"[{time.strftime('%H:%M:%S')}] Data above threshold — saving chunk {i}")
-            # Save to disk
             df = pd.DataFrame(data.T, columns=channels)
             df.to_pickle(os.path.join(output_dir, f"chunk_{i:04d}.pkl"))
-            i += 1
-
-            # Send to plotting queue
+            print(f"[{time.strftime('%H:%M:%S')}] Data above threshold — saved chunk {i}")
             data_queue.put(data.copy())
+            i += 1
         else:
-            print(f"[{time.strftime('%H:%M:%S')}] Data below threshold — skipping")
+            print(f"[{time.strftime('%H:%M:%S')}] Data below threshold — skipped")
+
+        # Maintain real-time pacing
+        elapsed = time.time() - chunk_start
+        remaining = chunk_duration - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
+
+    stop_event.set()
+    elapsed_total = time.time() - start_time
+    print(f"\n✅ Acquisition completed in {elapsed_total:.2f} seconds. Total chunks processed: {i}")
 
 # --- Plotting thread ---
 def plotting_thread():
@@ -120,8 +132,13 @@ def plotting_thread():
 # --- Run threads ---
 if __name__ == "__main__":
     print("🔁 Starting simulated DAQ system...")
+    overall_start = time.time()  # Start timing
+
     acq_thread = threading.Thread(target=acquisition_thread, daemon=True)
     acq_thread.start()
 
     plotting_thread()  # blocks until UI is closed
+
+    elapsed_time = time.time() - overall_start
     print("✅ Simulation complete.")
+    print(f"⏱️ Time it took to run the code: {elapsed_time:.2f} seconds")

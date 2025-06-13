@@ -1,0 +1,122 @@
+import threading
+import numpy as np
+import queue
+import time
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtGui
+from scipy.signal import spectrogram
+import nidaqmx
+from nidaqmx.constants import AcquisitionType
+from nidaqmx.stream_readers import AnalogMultiChannelReader
+from PyQt5.QtGui import QTransform
+from numba import njit
+import pandas as pd
+import os
+
+# Configuration
+fs = 44150
+chunk_duration = 3
+chunk_samples = int(chunk_duration * fs)
+T_total = 10  # seconds
+threshold = 0.5
+channels = ["ai0", "ai1"]
+device = "Dev1"
+spectro_channel_idx = 0
+
+
+stop_event = threading.Event()
+
+data_queue = queue.Queue()
+output_dir = "daq_data"
+os.makedirs(output_dir, exist_ok=True)
+
+@njit
+def is_above_threshold(data, channel_idx, thresh):
+    return np.max(data[channel_idx]) > thresh
+
+def acquisition_thread():
+    buffer = np.zeros((len(channels), chunk_samples))
+    start_time = time.time()
+
+    with nidaqmx.Task() as task:
+        for ch in channels:
+            task.ai_channels.add_ai_voltage_chan(f"{device}/{ch}")
+        task.timing.cfg_samp_clk_timing(
+            rate=fs,
+            sample_mode=AcquisitionType.CONTINUOUS,
+            samps_per_chan=chunk_samples
+        )
+
+        reader = AnalogMultiChannelReader(task.in_stream)
+        task.start()
+
+        while not stop_event.is_set():
+            elapsed = time.time() - start_time
+            if elapsed >= T_total:
+                stop_event.set()
+                break
+
+            reader.read_many_sample(buffer, number_of_samples_per_channel=chunk_samples, timeout=10.0)
+
+            if is_above_threshold(buffer, spectro_channel_idx, threshold):
+                data_queue.put(buffer.copy())
+
+def plotting_thread():
+    if not QtGui.QApplication.instance():
+        app = QtGui.QApplication([])
+    else:
+        app = QtGui.QApplication.instance()
+
+    win = pg.GraphicsLayoutWidget(title="DAQ Live Viewer")
+    win.resize(1000, 800)
+
+    plot_waveform = win.addPlot(title="Waveform")
+    curve_waveform = plot_waveform.plot(pen='y')
+
+    win.nextRow()
+    plot_spectrogram = win.addPlot(title="Spectrogram")
+    img = pg.ImageItem()
+    plot_spectrogram.addItem(img)
+    win.show()
+
+    while not stop_event.is_set() or not data_queue.empty():
+        try:
+            data = data_queue.get(timeout=1)
+        except queue.Empty:
+            continue
+
+        # plot waveform
+        y = data[spectro_channel_idx][::10]
+        x = np.linspace(0, chunk_duration, len(y))
+        curve_waveform.setData(x, y)
+
+        # spectrogram
+        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx], fs=fs, nperseg=1024, noverlap=512)
+        Sxx_dB = 10 * np.log10(Sxx + 1e-12)
+
+        #img.setImage(Sxx_dB.T, levels=(Sxx_dB.min(), Sxx_dB.max()))
+        #img.resetTransform()
+        #img.scale(t_spec[1] - t_spec[0], f_spec[1] - f_spec[0])
+        #img.setPos(0, 0)
+        img.setImage(Sxx_dB.T, levels=(Sxx_dB.min(), Sxx_dB.max()))
+        img.resetTransform()
+        dx = t_spec[1] - t_spec[0]
+        dy = f_spec[1] - f_spec[0]
+        transform = QTransform().scale(dx, dy)
+        img.setTransform(transform)
+
+        img.setPos(0, 0)
+
+
+        QtGui.QApplication.processEvents()
+
+    print("🛑 Plotting thread finished.")
+    win.close()
+    QtGui.QApplication.quit()
+
+# Start threads
+t1 = threading.Thread(target=acquisition_thread, daemon=True)
+t1.start()
+
+plotting_thread()
+

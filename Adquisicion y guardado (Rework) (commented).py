@@ -15,14 +15,13 @@ import os
 
 # Configuration
 fs = 44150
-chunk_duration = 3
+chunk_duration = 2
 chunk_samples = int(chunk_duration * fs)
 T_total = 10  # seconds
 threshold = 0.5
-channels = ["ai0", "ai1"]
+channels = ["ai0", "ai1"] #channels to acquire
 device = "Dev1"
 spectro_channel_idx = 0
-
 
 stop_event = threading.Event()
 
@@ -35,12 +34,21 @@ def is_above_threshold(data, channel_idx, thresh):
     return np.max(data[channel_idx]) > thresh
 
 def acquisition_thread():
+    print(f"Starting acquisition for {T_total} seconds (chunk size = {chunk_duration}s)...")
+
+    total_samples = int(fs * T_total)
+    total_chunks = total_samples // chunk_samples
+    i = 0
+
     buffer = np.zeros((len(channels), chunk_samples))
     start_time = time.time()
 
     with nidaqmx.Task() as task:
+        # Configure channels
         for ch in channels:
             task.ai_channels.add_ai_voltage_chan(f"{device}/{ch}")
+        
+        # Configure timing
         task.timing.cfg_samp_clk_timing(
             rate=fs,
             sample_mode=AcquisitionType.CONTINUOUS,
@@ -50,16 +58,34 @@ def acquisition_thread():
         reader = AnalogMultiChannelReader(task.in_stream)
         task.start()
 
-        while not stop_event.is_set():
-            elapsed = time.time() - start_time
-            if elapsed >= T_total:
-                stop_event.set()
-                break
+        for chunk_idx in range(total_chunks):
+            chunk_start = time.time()
 
-            reader.read_many_sample(buffer, number_of_samples_per_channel=chunk_samples, timeout=10.0)
+            # Read one chunk of data
+            reader.read_many_sample(
+                buffer,
+                number_of_samples_per_channel=chunk_samples,
+                timeout=10.0
+            )
 
             if is_above_threshold(buffer, spectro_channel_idx, threshold):
+                df = pd.DataFrame(buffer.T, columns=channels)
+                df.to_pickle(os.path.join(output_dir, f"chunk_{i:04d}.pkl"))
+                print(f"[{time.strftime('%H:%M:%S')}] Data above threshold — saved chunk {i}")
                 data_queue.put(buffer.copy())
+                i += 1
+            else:
+                print(f"[{time.strftime('%H:%M:%S')}] Data below threshold — skipped")
+
+            # Maintain real-time pacing
+            elapsed = time.time() - chunk_start
+            remaining = chunk_duration - elapsed
+            if remaining > 0:
+                time.sleep(remaining)
+
+    stop_event.set()
+    elapsed_total = time.time() - start_time
+    print(f"\n✅ Acquisition completed in {elapsed_total:.2f} seconds. Total chunks processed: {i}")
 
 def plotting_thread():
     if not QtGui.QApplication.instance():

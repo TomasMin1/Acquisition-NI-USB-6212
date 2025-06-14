@@ -1,9 +1,12 @@
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
+from PyQt5 import QtWidgets
+from PyQt5.QtCore import Qt
 import sys
 
 class DAQConfigWindow(QWidget):
     def __init__(self):
         super().__init__() # initializes Qtwidget
+        self.setFixedSize(800, 600)  # px #remove if you dont want the window to be a fixed size
         self.setWindowTitle("Configuracion para la adquisicion de datos")
         self.layout = QVBoxLayout()
 
@@ -27,14 +30,30 @@ class DAQConfigWindow(QWidget):
         # widgets
         self.setLayout(self.layout)
 
-    def add_input(self, label_text):
-        row = QHBoxLayout()
-        label = QLabel(label_text)
-        input_field = QLineEdit()
-        row.addWidget(label)
-        row.addWidget(input_field)
-        self.layout.addLayout(row)
+    # def add_input(self, label_text):
+    #     row = QHBoxLayout()
+    #     label = QLabel(label_text)
+    #     input_field = QLineEdit()
+    #     row.addWidget(label)
+    #     row.addWidget(input_field)
+    #     self.layout.addLayout(row)
+    #     return input_field
+
+    def add_input(self, label_text, default_value=""):
+        layout = QtWidgets.QHBoxLayout()
+        label = QtWidgets.QLabel(label_text)
+        input_field = QtWidgets.QLineEdit()
+        input_field.setText(str(default_value))
+
+        # 🌟 Set fixed width for all input fields
+        input_field.setFixedWidth(200)  # adjust width as needed
+
+        layout.addWidget(label)
+        layout.addWidget(input_field, alignment=Qt.AlignRight)  # Align input to the left
+        self.layout.addLayout(layout)
+
         return input_field
+
     
     ### functions for output directory picking ###
     def add_output_dir_picker(self):

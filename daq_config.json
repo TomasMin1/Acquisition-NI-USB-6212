@@ -1,0 +1,9 @@
+{
+    "fs": 1000,
+    "chunk_duration": 2.0,
+    "threshold": 1.0,
+    "channels": "ai0",
+    "spectro_channel": "ai0",
+    "T_total": 10.0,
+    "output_dir": "/home/tom/Documents/Scripts_Labo_6/simulated_chunks"
+}

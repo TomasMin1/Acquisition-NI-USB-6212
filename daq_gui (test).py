@@ -2,6 +2,11 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLa
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
 import sys
+import json
+import os
+
+#file that saves previously used config (saves time next time you open the app)
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "daq_config.json")
 
 class DAQConfigWindow(QWidget):
     def __init__(self):
@@ -11,15 +16,19 @@ class DAQConfigWindow(QWidget):
         self.layout = QVBoxLayout()
 
         #inputs
-        self.fs_input = self.add_input("Frecuencia de sampleo [fs]")
-        self.chunk_duration_input = self.add_input("Duracion de los archivos guardados [s]")
-        self.threshold_input = self.add_input("Threshold [V]")
-        self.channels_input = self.add_input("Canales (separados por coma, ejemplo: ai0,ai1)")
-        self.spectro_channel_idx_input = self.add_input("Canal sobre el que se quiere ver su espectrograma (ejemplo: ai0))")
-        self.T_total_input = self.add_input("Tiempo de adquisicion total")
+        config = self.load_config()
+
+        self.fs_input = self.add_input("Frecuencia de sampleo [fs]", config.get("fs", ""))
+        self.chunk_duration_input = self.add_input("Duracion de los archivos guardados [s]", config.get("chunk_duration", ""))
+        self.threshold_input = self.add_input("Threshold [V]", config.get("threshold", ""))
+        self.channels_input = self.add_input("Canales (separados por coma, ejemplo: ai0,ai1)", config.get("channels", ""))
+        self.spectro_channel_idx_input = self.add_input("Canal sobre el que se quiere ver su espectrograma (ejemplo: ai0))", config.get("spectro_channel", ""))
+        self.T_total_input = self.add_input("Tiempo de adquisicion total", config.get("T_total", ""))
 
         #directory picker
         self.add_output_dir_picker()
+
+        self.output_dir_display.setText(config.get("output_dir", ""))
 
         #run button
         self.run_button = QPushButton("Comenzar Adquisicion")
@@ -45,11 +54,11 @@ class DAQConfigWindow(QWidget):
         input_field = QtWidgets.QLineEdit()
         input_field.setText(str(default_value))
 
-        # 🌟 Set fixed width for all input fields
-        input_field.setFixedWidth(200)  # adjust width as needed
+        # Input fields alignment config
+        input_field.setFixedWidth(200)
 
         layout.addWidget(label)
-        layout.addWidget(input_field, alignment=Qt.AlignRight)  # Align input to the left
+        layout.addWidget(input_field, alignment=Qt.AlignRight)
         self.layout.addLayout(layout)
 
         return input_field
@@ -58,11 +67,11 @@ class DAQConfigWindow(QWidget):
     ### functions for output directory picking ###
     def add_output_dir_picker(self):
         row = QHBoxLayout()
-        label = QLabel("Output Directory")
+        label = QLabel("Guardar en")
         self.output_dir_display = QLineEdit()
         self.output_dir_display.setReadOnly(True)
 
-        choose_button = QPushButton("Choose...")
+        choose_button = QPushButton("Elegir...")
         choose_button.clicked.connect(self.choose_output_dir)
 
         row.addWidget(label)
@@ -105,11 +114,69 @@ class DAQConfigWindow(QWidget):
         print("T_total =", T_total)
         print("output_dir =", output_dir)
         print("spectro_channel_idx =", spectro_channel_idx, "(from channel:", spectro_channel_name, ")")
+        config_data = {
+            "fs": fs,
+            "chunk_duration": chunk_duration,
+            "threshold": threshold,
+            "channels": channels_text,
+            "spectro_channel": spectro_channel_name,
+            "T_total": T_total,
+            "output_dir": output_dir
+        }
+
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config_data, f, indent=4) # saves most recent config for next time
+
+    def load_config(self):
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    print("⚠️ Config file is corrupted, ignoring.")
+        return {}
+
 
 
 if __name__ == "__main__": # starts app, creates window, shows it, runs event loop
     app = QApplication(sys.argv)
+
+    #  visual config. (nice)
+    app.setStyleSheet("""
+        QWidget {
+            background-color: #2A2E32;
+            color: white;
+            font-size: 14px;
+        }
+
+        QLabel {
+            color: white;
+        }
+
+        QLineEdit {
+            background-color: #1E1E1E;
+            color: white;
+            border: 1px solid #555;
+            padding: 4px;
+        }
+
+        QPushButton {
+            background-color: #4990E2;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+        }
+
+        QPushButton:hover {
+            background-color: #5AA0F2;
+        }
+
+        QPushButton:pressed {
+            background-color: #3A7AC2;
+        }
+    """)
+
     window = DAQConfigWindow()
     window.show()
     sys.exit(app.exec_())
-

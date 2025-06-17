@@ -1,3 +1,5 @@
+#Main acquisition code
+
 import threading
 import numpy as np
 import queue
@@ -12,12 +14,21 @@ from PyQt5.QtGui import QTransform
 from numba import njit
 import pandas as pd
 import os
+import psutil
+
+ # Prioridades
+try:
+    psutil.Process().nice(-10)
+    print('Process priority raised to highest')
+
+except Exception as e:
+    print ('')
 
 # Configuration
 fs = 44150
-chunk_duration = 2
+chunk_duration = 5
 chunk_samples = int(chunk_duration * fs)
-T_total = 10  # seconds
+T_total = 20  # seconds
 threshold = 0.5
 channels = ["ai0", "ai1"] #channels to acquire
 device = "Dev1"
@@ -26,6 +37,7 @@ spectro_channel_idx = 0
 stop_event = threading.Event()
 
 data_queue = queue.Queue()
+save_queue = queue.Queue()
 output_dir = "daq_data"
 os.makedirs(output_dir, exist_ok=True)
 
@@ -69,19 +81,21 @@ def acquisition_thread():
             )
 
             if is_above_threshold(buffer, spectro_channel_idx, threshold):
-                df = pd.DataFrame(buffer.T, columns=channels)
-                df.to_pickle(os.path.join(output_dir, f"chunk_{i:04d}.pkl"))
+                data_queue.put((i,buffer.copy()))
                 print(f"[{time.strftime('%H:%M:%S')}] Data above threshold — saved chunk {i}")
-                data_queue.put(buffer.copy())
                 i += 1
             else:
                 print(f"[{time.strftime('%H:%M:%S')}] Data below threshold — skipped")
 
             # Maintain real-time pacing
-            elapsed = time.time() - chunk_start
-            remaining = chunk_duration - elapsed
-            if remaining > 0:
-                time.sleep(remaining)
+            #elapsed = time.time() - chunk_start
+            #remaining = chunk_duration - elapsed
+            next_chunk_time = start_time + (chunk_idx + 1) * chunk_duration
+            now = time.time()
+            sleep_time = next_chunk_time - now
+
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
     stop_event.set()
     elapsed_total = time.time() - start_time
@@ -107,7 +121,7 @@ def plotting_thread():
 
     while not stop_event.is_set() or not data_queue.empty():
         try:
-            data = data_queue.get(timeout=1)
+            i, data = data_queue.get(timeout=1)
         except queue.Empty:
             continue
 
@@ -117,7 +131,7 @@ def plotting_thread():
         curve_waveform.setData(x, y)
 
         # spectrogram
-        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx], fs=fs, nperseg=1024, noverlap=512)
+        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx], fs=fs, nperseg=128, noverlap=64)
         Sxx_dB = 10 * np.log10(Sxx + 1e-12)
 
         #img.setImage(Sxx_dB.T, levels=(Sxx_dB.min(), Sxx_dB.max()))
@@ -140,9 +154,20 @@ def plotting_thread():
     win.close()
     QtGui.QApplication.quit()
 
+def save_thread():
+    while not stop_event.is_set() or not save_queue.empty():
+        try:
+            i, data = save_queue.get(timeout=1)
+            df = pd.DataFrame(data.T, columns=channels)
+            df.to_pickle(os.path.join(output_dir, f"chunk_{i:04d}.pkl"))
+            # np.save(os.path.join(output_dir,f'chunk_{i:04d}.npy'), data.T)
+        except queue.Empty:
+            continue
+
 # Start threads
 t1 = threading.Thread(target=acquisition_thread, daemon=True)
+t2 = threading.Thread(target = save_thread, daemon = True)
+t2.start()
 t1.start()
 
 plotting_thread()
-

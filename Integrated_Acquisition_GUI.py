@@ -1,4 +1,4 @@
-#Acquisition with gui integration!!!
+# Acquisition with gui integration
 
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog
 from PyQt5.QtCore import Qt

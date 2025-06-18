@@ -1,4 +1,4 @@
-#Main acquisition code
+#Main acquisition code (no GUI)
 
 import threading
 import numpy as np

@@ -35,6 +35,7 @@ chunk_samples = int(chunk_duration * fs)
 T_total = 20
 threshold = 0.0
 channels = ["ai0",'ai1']
+channel_names = ["sound",'pressure']
 device = "Dev1"
 spectro_channel_idx = 0
 birdname = 'Tweetie'
@@ -161,25 +162,55 @@ def plotting_thread():
 
 from scipy.io.wavfile import write
 
+import csv
+
 def save_thread():
     while not stop_event.is_set() or not save_queue.empty():
         try:
             i, data = save_queue.get_nowait()
             data = data.T  # shape: (samples, channels)
 
-            # Avoid division by zero in case of silent data
+            # Initialize row storage
+            row_stats = []
+            headers = []
+
             max_val = np.max(np.abs(data))
             if max_val == 0:
                 scaled = np.zeros_like(data, dtype=np.int16)
+                avg_all = np.zeros(data.shape[1])
+                ampl_all = np.zeros(data.shape[1])
             else:
-                scaled = (data / max_val * 32767).astype(np.int16)
+                avg_all = np.mean(data, axis=0)                # shape: (channels,)
+                centered = data - avg_all                      # center each channel
+                ampl_all = np.max(np.abs(centered), axis=0)    # shape: (channels,)
+                scaled = centered / ampl_all                   # normalize per channel
 
+            # Save audio and prepare stats
+            timestamp = time.strftime('%d-%m-%Y_%H.%M.%S')
             for n in range(len(channels)):
-                filename = os.path.join(output_dir, f"{channels[n]}_chunk_{i:04d}.wav")
-                write(filename, fs, scaled[:, n])
-        
+                # Save per-channel WAV
+                wav_filename = os.path.join(
+                    output_dir,
+                    f"{channel_names[n]}_{birdname}_{timestamp}.wav"
+                )
+                write(wav_filename, fs, scaled[:, n])
+
+                # Prepare CSV columns
+                headers.append(f"{channel_names[n]}_avg")
+                headers.append(f"{channel_names[n]}_ampl")
+                row_stats.extend([avg_all[n], ampl_all[n]])
+
+            # Save stats to a new CSV file for this measurement
+            csv_filename = os.path.join(output_dir, f"{birdname}_{timestamp}.csv")
+            with open(csv_filename, mode='w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(headers)
+                writer.writerow(row_stats)
+
         except queue.Empty:
             time.sleep(0.1)
+
+
 
 
 # -------- MAIN --------

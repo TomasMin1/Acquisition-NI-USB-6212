@@ -43,7 +43,11 @@ birdname = 'Tweetie'
 stop_event = threading.Event()
 data_queue = queue.Queue()
 save_queue = queue.Queue()
-output_dir = birdname
+base_dir = birdname
+today_str = time.strftime('%d-%m-%Y')
+
+output_dir = os.path.join(base_dir, today_str)
+
 os.makedirs(output_dir, exist_ok=True)
 
 @njit

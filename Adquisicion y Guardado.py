@@ -104,6 +104,7 @@ def acquisition_thread():
             #sleep_time = next_chunk_time - time.perf_counter()
             #if sleep_time > 0:
             #    time.sleep(sleep_time)
+
             target_time = start_time + (chunk_idx + 1) * chunk_duration
             while True:
                 now = time.perf_counter()
@@ -135,6 +136,8 @@ def plotting_thread():
     plot_spectrogram.addItem(img)
     win.show()
 
+    half_window = 200  # window arround peak that will be shown in plot
+
     while not stop_event.is_set() or not data_queue.empty():
         try:
             i, data = data_queue.get_nowait()
@@ -142,13 +145,34 @@ def plotting_thread():
             QtGui.QApplication.processEvents()
             continue
 
-        # Waveform
-        y = data[spectro_channel_idx][::10]
-        x = np.linspace(0, chunk_duration, len(y))
+        ##----------------------------- waveform ------------------------------##
+
+        #y = data[spectro_channel_idx][::10]
+
+        # changed the plotting so that it shows points arround the max value
+        y_full = data[spectro_channel_idx] 
+        peak_idx = np.argmax(np.abs(y_full)) #index of the maximum amplitude (peak) from the full waveform data
+
+        start = max(0, peak_idx - half_window)
+        end = min(len(y_full), peak_idx + half_window + 1)
+        y = y_full[start:end]
+        ##---------------------------------------------------------------------##
+
+
+        #x = np.linspace(0, chunk_duration, len(y))
+        x = np.linspace(0, len(y)/fs, len(y))
         curve_waveform.setData(x[:200], y[:200])
 
-        # Spectrogram
-        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx][::5], fs=fs/5, nperseg=256, noverlap=128)
+        ##--------------------------- Spectrogram -----------------------------##
+
+        #f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx][::5], fs=fs/5, nperseg=256, noverlap=128)
+
+        seg = y_full[start:end]
+        if len(seg) < 256:
+            seg = np.pad(seg, (0, 256 - len(seg)))
+
+        f_spec, t_spec, Sxx = spectrogram(seg, fs=fs, nperseg=256, noverlap=128)
+        
         Sxx_dB = 10 * np.log10(Sxx + 1e-12)
 
         img.setImage(Sxx_dB.T, levels=(Sxx_dB.max(), Sxx_dB.min()))
@@ -157,6 +181,7 @@ def plotting_thread():
         dy = f_spec[1] - f_spec[0]
         img.setTransform(QTransform().scale(dx, dy))
         img.setPos(0, 0)
+        ##---------------------------------------------------------------------##
 
         QtGui.QApplication.processEvents()
 

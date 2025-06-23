@@ -1,4 +1,4 @@
-#Main acquisition code (no GUI)
+# Main acquisition code (no GUI)
 
 import threading
 import numpy as np
@@ -19,45 +19,69 @@ import gc
 from scipy.io.wavfile import write
 
 
-# Prioritize process
+# -- Maximiza la prioridad del proceso --
 def high_priority():
     try:
         p = psutil.Process(os.getpid())
         p.nice(-20)
-        #print('✅ Process priority raised to highest')
     except Exception:
         pass
 
-# Configuration
-fs = 44150
-chunk_duration = 5
+# --- Configuración ---
+fs = 44150 # Frecuencia de sampleo
+chunk_duration = 10 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 20
-threshold = 0.0
-channels = ["ai0",'ai1']
-channel_names = ["sound",'pressure']
-device = "Dev1"
-spectro_channel_idx = 0
-birdname = 'Tweetie'
+T_total = 50 # Tiempo total de medición
+threshold = 0.01 # Valor de amplitud para usar de trigger
+channels = ["ai0",'ai1'] # Canales que se están midiendo
+channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
+device = "Dev1" # NO MODIFICAR
+spectro_channel_idx = 1 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
+birdname = 'Tweetie' # Bird ID
 
+# -- Definiciones para poder utilizar los threads --
 stop_event = threading.Event()
 data_queue = queue.Queue()
 save_queue = queue.Queue()
+Route = r'C:\Users\lsd\Desktop\tomisebalabo6' # Elegir donde se guarda
 base_dir = birdname
 today_str = time.strftime('%d-%m-%Y')
 
-output_dir = os.path.join(base_dir, today_str)
+output_dir = os.path.join(Route, base_dir, today_str)
 
 os.makedirs(output_dir, exist_ok=True)
 
-@njit
-def is_above_threshold(data, channel_idx, thresh):
-    return np.max(data[channel_idx][::100]) > thresh
 
+
+# @njit
+# def is_above_threshold(data, channel_idx, thresh_rms, thresh_zcr):
+#     x = data[channel_idx][::10] # Toma los datos (toma cada 10 del original)
+#     rms = np.sqrt(np.mean(x ** 2)) # Calcula RMS
+#     zero_crossings = np.sum((x[1:] * x[:-1]) < 0) # Multiplica datos consecutivos y si da menos a 0 lo suma
+#     zcr = zero_crossings / len(x) # Normaliza
+#     return rms > thresh_rms and zcr > thresh_zcr
+
+
+def is_above_threshold(data, channel_idx, thresh):
+    x = data[channel_idx][::10] # Toma los datos (toma cada 10 del original)
+    x -= np.mean(x)
+    x = np.abs(x)
+    value = np.quantile(x, .8)
+    print("Trigger value obtained: ", value)
+    return value > thresh
+
+
+
+# -- Defino el buffer afuera del thread para poder optimizarlo con numba --
 @njit
 def define_buffer(n_channels, chunk_samples):
     return np.zeros((n_channels, chunk_samples))
 
+
+'''Toma los datos del NIDAQ para los canales indicados y 
+si superan el threshold los guarda en data_queue y save_queue
+para que los siguientes hilos trabajen con esos datos. Una vez que 
+guarda esos datos continua con la adquisición del próximo chunk'''
 def acquisition_thread():
 
     high_priority()
@@ -100,10 +124,6 @@ def acquisition_thread():
             else:
                 print(f"[{time.strftime('%H:%M:%S')}] ❌ Below threshold — skipped")
 
-            #next_chunk_time = start_time + (chunk_idx + 1) * chunk_duration
-            #sleep_time = next_chunk_time - time.perf_counter()
-            #if sleep_time > 0:
-            #    time.sleep(sleep_time)
             target_time = start_time + (chunk_idx + 1) * chunk_duration
             while True:
                 now = time.perf_counter()
@@ -120,17 +140,22 @@ def acquisition_thread():
 
     gc.enable()
 
+
+'''Revisa data_queue y, si tiene datos, los plotea (solo el canal indicado). 
+Hace un plot de f(x) para 400 puntos centrado en el máximo absoluto
+y un plot del espectograma de todo el chunk.'''
+
 def plotting_thread():
     app = QtGui.QApplication.instance() or QtGui.QApplication([])
 
     win = pg.GraphicsLayoutWidget(title="DAQ Live Viewer")
     win.resize(1000, 600)
 
-    plot_waveform = win.addPlot(title="Waveform")
+    plot_waveform = win.addPlot(title=f"{channel_names[spectro_channel_idx]} waveform")
     curve_waveform = plot_waveform.plot(pen='y')
 
     win.nextRow()
-    plot_spectrogram = win.addPlot(title="Spectrogram")
+    plot_spectrogram = win.addPlot(title=f"{channel_names[spectro_channel_idx]} spectrogram")
     img = pg.ImageItem()
     plot_spectrogram.addItem(img)
     win.show()
@@ -142,13 +167,18 @@ def plotting_thread():
             QtGui.QApplication.processEvents()
             continue
 
-        # Waveform
+        # --- Waveform ---
+        
         y = data[spectro_channel_idx][::10]
         x = np.linspace(0, chunk_duration, len(y))
-        curve_waveform.setData(x[:200], y[:200])
 
-        # Spectrogram
-        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx][::5], fs=fs/5, nperseg=256, noverlap=128)
+        # cent = np.where(abs(y) == max(abs(y)))[0][0]
+        # disp = 200
+        #curve_waveform.setData(x[cent-disp:cent+disp], y[cent-disp:cent+disp])
+        curve_waveform.setData(x, y)
+
+        # --- Spectrogram ---
+        f_spec, t_spec, Sxx = spectrogram(data[spectro_channel_idx][::2], fs=fs/2, nperseg=256, noverlap=128)
         Sxx_dB = 10 * np.log10(Sxx + 1e-12)
 
         img.setImage(Sxx_dB.T, levels=(Sxx_dB.max(), Sxx_dB.min()))
@@ -167,6 +197,10 @@ def plotting_thread():
 from scipy.io.wavfile import write
 
 import csv
+
+'''Revisa save_thread y, si tiene datos, los guarda en formato wav (uno por cada canal). 
+Además calcula el promedio y valor máximo de cada chunk y los guarda en un csv para 
+poder obtener la señal inversa (de vuelta indicando de qué canal se trata). '''
 
 def save_thread():
     while not stop_event.is_set() or not save_queue.empty():
@@ -218,6 +252,9 @@ def save_thread():
 
 
 # -------- MAIN --------
+'''Corre el codigo con las prioridades de hilos tal que se adquiera lo
+más efectivamente posible'''
+
 global_start = time.perf_counter()
 
 t1 = threading.Thread(target=acquisition_thread, daemon=True)

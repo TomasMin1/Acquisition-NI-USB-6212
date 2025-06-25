@@ -19,7 +19,9 @@ import os
 import psutil
 import gc
 from scipy.io.wavfile import write
-
+import pygame
+import random
+import glob
 
 # -- Maximiza la prioridad del proceso --
 def high_priority():
@@ -31,15 +33,21 @@ def high_priority():
 
 # --- Configuración ---
 fs = 44150 # Frecuencia de sampleo
-chunk_duration = 10 # Duración de cada wav
+chunk_duration = 5 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 60 # Tiempo total de medición
+T_total = 10 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
 device = "Dev1" # NO MODIFICAR
 spectro_channel_idx = 0 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
 birdname = 'Tweetie' # Bird ID
+
+# --- Playback Config ---
+enable_playback = True
+playback_folder = r'C:\path\to\stimuli'  # Carpeta con audios a reproducir
+playback_repeats = 3  # N_v: numero de veces que cada audio se reproduce
+silence_duration = 2  # segundos de silencio entre audios
 
 # -- Definiciones para poder utilizar los threads --
 stop_event = threading.Event()
@@ -227,7 +235,6 @@ def save_thread():
                 centered = data - avg_all                      # center each channel
                 ampl_all = np.max(np.abs(centered), axis=0)    # shape: (channels,)
                 scaled = centered / ampl_all
-                #scaled_wav = (scaled * 32767).astype(np.int32)
                 scaled_wav = (scaled * 32767).astype(np.int16) # normalize per channel
                 ampl_final = ampl_all/32767
 
@@ -258,6 +265,36 @@ def save_thread():
 
 
 
+def playback_thread():
+    print("🔊 Playback thread started.")
+    pygame.mixer.init()
+
+    # Get all .wav files in the folder
+    wav_files = glob.glob(os.path.join(playback_folder, "*.wav"))
+    if not wav_files:
+        print("⚠️ No .wav files found in playback folder.")
+        return
+
+    # Repeat playback N_v times
+    all_playbacks = wav_files * playback_repeats
+    random.shuffle(all_playbacks)
+
+    for filepath in all_playbacks:
+        if stop_event.is_set():
+            break
+
+        print(f"🎵 Playing: {os.path.basename(filepath)}")
+        pygame.mixer.music.load(filepath)
+        pygame.mixer.music.play()
+
+        # Wait until it finishes
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.1)
+
+        # Silence (pause)
+        time.sleep(silence_duration)
+
+    print("🔇 Playback thread finished.")
 
 # -------- MAIN --------
 '''Corre el codigo con las prioridades de hilos tal que se adquiera lo
@@ -267,15 +304,17 @@ global_start = time.perf_counter()
 
 t1 = threading.Thread(target=acquisition_thread, daemon=True)
 t2 = threading.Thread(target=save_thread, daemon=True)
-#t3 = threading.Thread(target= plotting_thread, daemon = True)
+threads = [t1, t2]
 
-t1.start()
-t2.start()
+if enable_playback:
+    t3 = threading.Thread(target=playback_thread, daemon=True)
+    threads.append(t3)
+
+for t in threads:
+    t.start()
+
 
 plotting_thread()
-
-#t1.join()
-#t2.join()
 
 global_end = time.perf_counter()
 print(f"\n⏱️ Total runtime: {global_end - global_start:.2f} seconds")

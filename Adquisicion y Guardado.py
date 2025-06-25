@@ -5,12 +5,14 @@ import numpy as np
 import queue
 import time
 import pyqtgraph as pg
-from pyqtgraph.Qt import QtGui
+#from pyqtgraph.Qt import QtGui
 from scipy.signal import spectrogram
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
 from nidaqmx.stream_readers import AnalogMultiChannelReader
 from PyQt5.QtGui import QTransform
+from PyQt5.QtWidgets import QApplication
+from pyqtgraph.Qt import QtWidgets
 from numba import njit
 import pandas as pd
 import os
@@ -29,21 +31,21 @@ def high_priority():
 
 # --- Configuración ---
 fs = 44150 # Frecuencia de sampleo
-chunk_duration = 10 # Duración de cada wav
+chunk_duration = 5 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 50 # Tiempo total de medición
+T_total = 10 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
 device = "Dev1" # NO MODIFICAR
-spectro_channel_idx = 1 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
+spectro_channel_idx = 0 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
 birdname = 'Tweetie' # Bird ID
 
 # -- Definiciones para poder utilizar los threads --
 stop_event = threading.Event()
 data_queue = queue.Queue()
 save_queue = queue.Queue()
-Route = r'C:\Users\lsd\Desktop\tomisebalabo6' # Elegir donde se guarda
+Route = r'C:\Users\lsd\Documents\Codigo Adquisicion DAQ Git\Acquisition-NI-USB-6212' # Elegir donde se guarda
 base_dir = birdname
 today_str = time.strftime('%d-%m-%Y')
 
@@ -146,7 +148,8 @@ Hace un plot de f(x) para 400 puntos centrado en el máximo absoluto
 y un plot del espectograma de todo el chunk.'''
 
 def plotting_thread():
-    app = QtGui.QApplication.instance() or QtGui.QApplication([])
+    #app = QtGui.QApplication.instance() or QtGui.QApplication([])
+    app = QApplication.instance() or QApplication([])
 
     win = pg.GraphicsLayoutWidget(title="DAQ Live Viewer")
     win.resize(1000, 600)
@@ -164,7 +167,8 @@ def plotting_thread():
         try:
             i, data = data_queue.get_nowait()
         except queue.Empty:
-            QtGui.QApplication.processEvents()
+            #QtGui.QApplication.processEvents()
+            QtWidgets.QApplication.processEvents()
             continue
 
         # --- Waveform ---
@@ -188,11 +192,12 @@ def plotting_thread():
         img.setTransform(QTransform().scale(dx, dy))
         img.setPos(0, 0)
 
-        QtGui.QApplication.processEvents()
-
+        #QtGui.QApplication.processEvents()
+        QtWidgets.QApplication.processEvents()
+        
     print("🛑 Plotting thread finished.")
     win.close()
-    QtGui.QApplication.quit()
+    QApplication.quit()
 
 from scipy.io.wavfile import write
 
@@ -221,7 +226,9 @@ def save_thread():
                 avg_all = np.mean(data, axis=0)                # shape: (channels,)
                 centered = data - avg_all                      # center each channel
                 ampl_all = np.max(np.abs(centered), axis=0)    # shape: (channels,)
-                scaled = centered / ampl_all                   # normalize per channel
+                scaled = centered / ampl_all
+                scaled_wav = (scaled * 32767).astype(np.int32) # normalize per channel
+                ampl_final = ampl_all/32767
 
             # Save audio and prepare stats
             timestamp = time.strftime('%d-%m-%Y_%H.%M.%S')
@@ -231,12 +238,12 @@ def save_thread():
                     output_dir,
                     f"{channel_names[n]}_{birdname}_{timestamp}.wav"
                 )
-                write(wav_filename, fs, scaled[:, n])
+                write(wav_filename, fs, scaled_wav[:, n])
 
                 # Prepare CSV columns
                 headers.append(f"{channel_names[n]}_avg")
                 headers.append(f"{channel_names[n]}_ampl")
-                row_stats.extend([avg_all[n], ampl_all[n]])
+                row_stats.extend([avg_all[n], ampl_final[n]])
 
             # Save stats to a new CSV file for this measurement
             csv_filename = os.path.join(output_dir, f"{birdname}_{timestamp}.csv")

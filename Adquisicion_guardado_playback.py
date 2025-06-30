@@ -22,6 +22,9 @@ from scipy.io.wavfile import write
 import pygame
 import random
 import glob
+from datetime import datetime, time as dtime
+from scipy.io.wavfile import write
+import csv
 
 # -- Maximiza la prioridad del proceso --
 def high_priority():
@@ -33,9 +36,9 @@ def high_priority():
 
 # --- Configuración ---
 fs = 44150 # Frecuencia de sampleo
-chunk_duration = 5 # Duración de cada wav
+chunk_duration = 20 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 10 # Tiempo total de medición
+T_total = 60 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
@@ -43,11 +46,13 @@ device = "Dev1" # NO MODIFICAR
 spectro_channel_idx = 0 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
 birdname = 'Tweetie' # Bird ID
 
-# --- Playback Config ---
+# -- Definiciones para el protocolo de playback -- 
 enable_playback = True
-playback_folder = r'C:\path\to\stimuli'  # Carpeta con audios a reproducir
-playback_repeats = 3  # N_v: numero de veces que cada audio se reproduce
-silence_duration = 2  # segundos de silencio entre audios
+playback_folder = r'C:\Users\lsd\Desktop\tomisebalabo6\Tweetie\Playback'  # Carpeta con audios a reproducir
+time_init_playback = dtime(9, 0)   # 09:00 AM
+time_end_playback  = dtime(17, 0)  # 05:00 PM
+playback_repeats = 1  # N_v: numero de veces que cada audio se reproduce
+silence_duration = 5  # segundos de silencio entre audios
 
 # -- Definiciones para poder utilizar los threads --
 stop_event = threading.Event()
@@ -60,6 +65,11 @@ today_str = time.strftime('%d-%m-%Y')
 output_dir = os.path.join(Route, base_dir, today_str)
 
 os.makedirs(output_dir, exist_ok=True)
+
+
+def is_within_playback_time_window(start, end):
+    now = datetime.now().time()
+    return start <= now <= end
 
 
 
@@ -204,12 +214,10 @@ def plotting_thread():
         QtWidgets.QApplication.processEvents()
         
     print("🛑 Plotting thread finished.")
+    time.sleep(chunk_duration)
     win.close()
     QApplication.quit()
 
-from scipy.io.wavfile import write
-
-import csv
 
 '''Revisa save_thread y, si tiene datos, los guarda en formato wav (uno por cada canal). 
 Además calcula el promedio y valor máximo de cada chunk y los guarda en un csv para 
@@ -265,6 +273,47 @@ def save_thread():
 
 
 
+# def playback_thread():
+#     print("🔊 Playback thread started.")
+#     pygame.mixer.init()
+
+#     # Get all .wav files in the folder
+#     wav_files = glob.glob(os.path.join(playback_folder, "*.wav"))
+#     if not wav_files:
+#         print("⚠️ No .wav files found in playback folder.")
+#         return
+
+#     # Repeat playback N_v times
+#     all_playbacks = []
+
+#     for n in range(len(wav_files)):
+#         i = 0
+#         wav_files_new = []
+#         while i < playback_repeats:
+#             wav_files_new.append(wav_files[n])
+#             i += 1
+#         all_playbacks.append(wav_files_new)
+
+#     random.shuffle(all_playbacks)
+
+#     for filepath in all_playbacks:
+#         if stop_event.is_set():
+#             break
+
+#         print(f"🎵 Playing: {os.path.basename(filepath)}")
+#         pygame.mixer.music.load(filepath)
+#         pygame.mixer.music.play()
+
+#         # Wait until it finishes
+#         while pygame.mixer.music.get_busy():
+#             time.sleep(0.1)
+
+#         # Silence (pause)
+#         time.sleep(silence_duration)
+
+#     print("🔇 Playback thread finished.")
+
+
 def playback_thread():
     print("🔊 Playback thread started.")
     pygame.mixer.init()
@@ -275,26 +324,39 @@ def playback_thread():
         print("⚠️ No .wav files found in playback folder.")
         return
 
-    # Repeat playback N_v times
-    all_playbacks = wav_files * playback_repeats
-    random.shuffle(all_playbacks)
+    session_count = 0
+    while is_within_playback_time_window(time_init_playback, time_end_playback):
+        # Create one session
+        base_playbacks = [[wav] * playback_repeats for wav in wav_files]
+        random.shuffle(base_playbacks)
 
-    for filepath in all_playbacks:
-        if stop_event.is_set():
-            break
+        session_count += 1
+        print(f"\n--- Session {session_count} ---")
+        for block in base_playbacks:
+            for wav in block:
+                if stop_event.is_set():
+                    break
 
-        print(f"🎵 Playing: {os.path.basename(filepath)}")
-        pygame.mixer.music.load(filepath)
-        pygame.mixer.music.play()
+                print(f"🎵 Playing: {os.path.basename(wav)}")
+                pygame.mixer.music.load(wav)
+                pygame.mixer.music.play()
 
-        # Wait until it finishes
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.1)
+                # Wait until it finishes
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
 
-        # Silence (pause)
-        time.sleep(silence_duration)
+                # Silence (pause)
+                time.sleep(silence_duration)
+                print(f"Playing {wav}")
+                # Insert playback code here, or simulate:
+                time.sleep(0.1)  # simulate playback delay
+
+        # Optional pause between sessions
+        time.sleep(1)  # or more, depending on your setup
+
 
     print("🔇 Playback thread finished.")
+
 
 # -------- MAIN --------
 '''Corre el codigo con las prioridades de hilos tal que se adquiera lo

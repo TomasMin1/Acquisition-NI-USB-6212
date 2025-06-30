@@ -4,6 +4,7 @@ import nidaqmx
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 fs = 44150 # Frecuencia de sampleo
 chunk_duration = 5 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)

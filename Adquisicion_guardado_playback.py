@@ -1,11 +1,10 @@
-# Main acquisition code (no GUI)
+# Código con protocolo playback
 
 import threading
 import numpy as np
 import queue
 import time
 import pyqtgraph as pg
-#from pyqtgraph.Qt import QtGui
 from scipy.signal import spectrogram
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
@@ -36,9 +35,9 @@ def high_priority():
 
 # --- Configuración ---
 fs = 44150 # Frecuencia de sampleo
-chunk_duration = 20 # Duración de cada wav
+chunk_duration = 30 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 60 # Tiempo total de medición
+T_total = 210 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
@@ -51,13 +50,15 @@ enable_playback = True
 playback_folder = r'C:\Users\lsd\Desktop\tomisebalabo6\Tweetie\Playback'  # Carpeta con audios a reproducir
 time_init_playback = dtime(9, 0)   # 09:00 AM
 time_end_playback  = dtime(17, 0)  # 05:00 PM
-playback_repeats = 1  # N_v: numero de veces que cada audio se reproduce
-silence_duration = 5  # segundos de silencio entre audios
+playback_repeats = 7  # N_v: numero de veces que cada audio se reproduce
+#silence_duration = 5  # segundos de silencio entre audios
 
 # -- Definiciones para poder utilizar los threads --
 stop_event = threading.Event()
 data_queue = queue.Queue()
 save_queue = queue.Queue()
+playback_queue = queue.Queue()
+trigger_queue = queue.Queue()
 Route = r'C:\Users\lsd\Documents\Codigo Adquisicion DAQ Git\Acquisition-NI-USB-6212' # Elegir donde se guarda
 base_dir = birdname
 today_str = time.strftime('%d-%m-%Y')
@@ -72,31 +73,51 @@ def is_within_playback_time_window(start, end):
     return start <= now <= end
 
 
-
-# @njit
-# def is_above_threshold(data, channel_idx, thresh_rms, thresh_zcr):
-#     x = data[channel_idx][::10] # Toma los datos (toma cada 10 del original)
-#     rms = np.sqrt(np.mean(x ** 2)) # Calcula RMS
-#     zero_crossings = np.sum((x[1:] * x[:-1]) < 0) # Multiplica datos consecutivos y si da menos a 0 lo suma
-#     zcr = zero_crossings / len(x) # Normaliza
-#     return rms > thresh_rms and zcr > thresh_zcr
-
-
-def is_above_threshold(data, channel_idx, thresh):
-    x = data[channel_idx][::10] # Toma los datos (toma cada 10 del original)
-    x -= np.mean(x)
-    x = np.abs(x)
-    value = np.quantile(x, .8)
-    print("Trigger value obtained: ", value)
-    return value > thresh
-
-
-
 # -- Defino el buffer afuera del thread para poder optimizarlo con numba --
 @njit
 def define_buffer(n_channels, chunk_samples):
     return np.zeros((n_channels, chunk_samples))
 
+
+def playback_thread():
+    print("🔊 Playback thread started.")
+    pygame.mixer.init()
+
+    # Get all .wav files in the folder
+    wav_files = glob.glob(os.path.join(playback_folder, "*.wav"))
+    
+    if not wav_files:
+        print("⚠️ No .wav files found in playback folder.")
+        return
+
+    session_count = 0
+    session_wavs = []
+
+    while True:
+        # If session exhausted, start a new one
+        if not session_wavs:
+            session_count += 1
+            print(f"\n--- Session {session_count} ---")
+            session_wavs = []
+            for wav in wav_files:
+                session_wavs.extend([wav] * playback_repeats)
+
+            random.shuffle(session_wavs)
+
+        try:
+            time.sleep(0.5)
+            # Wait for acquisition to trigger playback
+            trigger = trigger_queue.get(timeout=1)
+            if trigger == 1:
+                wav_to_play = session_wavs.pop(0)
+                print(f"🎵 Playing {os.path.basename(wav_to_play)}")
+                pygame.mixer.music.load(wav_to_play)
+                pygame.mixer.music.play()
+                playback_queue.put(os.path.basename(wav_to_play))
+                while pygame.mixer.music.get_busy():
+                    time.sleep(0.1)
+        except queue.Empty:
+            continue  # Just loop again if no trigger in 1s
 
 '''Toma los datos del NIDAQ para los canales indicados y 
 si superan el threshold los guarda en data_queue y save_queue
@@ -114,6 +135,8 @@ def acquisition_thread():
     buffer = define_buffer(len(channels), chunk_samples)
     start_time = time.perf_counter()
 
+    trigger_queue.put(1)
+    
     #print(f"🎙️  Starting acquisition for {T_total} seconds ({total_chunks} chunks of {chunk_duration}s)...")
 
     with nidaqmx.Task() as task:
@@ -136,23 +159,36 @@ def acquisition_thread():
                 timeout=chunk_duration*2
             )
 
-            if is_above_threshold(buffer, spectro_channel_idx, threshold):
-                data_queue.put((i, buffer.copy()))
-                save_queue.put((i, buffer.copy()))
-                #print(f"[{time.strftime('%H:%M:%S')}] ✅ Saved chunk {i}")
-                i += 1
-            else:
-                print(f"[{time.strftime('%H:%M:%S')}] ❌ Below threshold — skipped")
+            # 🟢 Trigger playback for each new acquisition
+            trigger_queue.put(1)
 
+            # Timing logic (to match precise acquisition intervals)
             target_time = start_time + (chunk_idx + 1) * chunk_duration
             while True:
                 now = time.perf_counter()
                 if now >= target_time:
                     break
                 elif target_time - now > 0.005:
-                    time.sleep(0.001)  # Coarse wait
+                    time.sleep(0.001)
                 else:
-                    pass  # Spin-wait for sub-ms
+                    pass
+
+            # Send data to queues
+            data_queue.put((i, buffer.copy()))
+            save_queue.put((i, buffer.copy()))
+            i += 1
+
+            # Repeat wait block (if needed)
+            target_time = start_time + (chunk_idx + 1) * chunk_duration
+            while True:
+                now = time.perf_counter()
+                if now >= target_time:
+                    break
+                elif target_time - now > 0.005:
+                    time.sleep(0.001)
+                else:
+                    pass
+
 
     stop_event.set()
     elapsed_total = time.perf_counter() - start_time
@@ -246,13 +282,15 @@ def save_thread():
                 scaled_wav = (scaled * 32767).astype(np.int16) # normalize per channel
                 ampl_final = ampl_all/32767
 
+            playback_name = playback_queue.get_nowait()
+
             # Save audio and prepare stats
             timestamp = time.strftime('%d-%m-%Y_%H.%M.%S')
             for n in range(len(channels)):
                 # Save per-channel WAV
                 wav_filename = os.path.join(
                     output_dir,
-                    f"{channel_names[n]}_{birdname}_{timestamp}.wav"
+                    f"Playback({playback_name})_{channel_names[n]}_{birdname}_{timestamp}.wav"
                 )
                 write(wav_filename, fs, scaled_wav[:, n])
 
@@ -262,7 +300,7 @@ def save_thread():
                 row_stats.extend([avg_all[n], ampl_final[n]])
 
             # Save stats to a new CSV file for this measurement
-            csv_filename = os.path.join(output_dir, f"{birdname}_{timestamp}.csv")
+            csv_filename = os.path.join(output_dir, f"Playback({playback_name})_{birdname}_{timestamp}.csv")
             with open(csv_filename, mode='w', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(headers)
@@ -314,48 +352,7 @@ def save_thread():
 #     print("🔇 Playback thread finished.")
 
 
-def playback_thread():
-    print("🔊 Playback thread started.")
-    pygame.mixer.init()
 
-    # Get all .wav files in the folder
-    wav_files = glob.glob(os.path.join(playback_folder, "*.wav"))
-    if not wav_files:
-        print("⚠️ No .wav files found in playback folder.")
-        return
-
-    session_count = 0
-    while is_within_playback_time_window(time_init_playback, time_end_playback):
-        # Create one session
-        base_playbacks = [[wav] * playback_repeats for wav in wav_files]
-        random.shuffle(base_playbacks)
-
-        session_count += 1
-        print(f"\n--- Session {session_count} ---")
-        for block in base_playbacks:
-            for wav in block:
-                if stop_event.is_set():
-                    break
-
-                print(f"🎵 Playing: {os.path.basename(wav)}")
-                pygame.mixer.music.load(wav)
-                pygame.mixer.music.play()
-
-                # Wait until it finishes
-                while pygame.mixer.music.get_busy():
-                    time.sleep(0.1)
-
-                # Silence (pause)
-                time.sleep(silence_duration)
-                print(f"Playing {wav}")
-                # Insert playback code here, or simulate:
-                time.sleep(0.1)  # simulate playback delay
-
-        # Optional pause between sessions
-        time.sleep(1)  # or more, depending on your setup
-
-
-    print("🔇 Playback thread finished.")
 
 
 # -------- MAIN --------

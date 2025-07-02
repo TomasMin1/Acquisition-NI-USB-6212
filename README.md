@@ -7,3 +7,5 @@ Adquisicion_NIUSB6212_Base.py (single measurement, used for testing)
 Adquisicion y Guardado.py (Loop measurement, does as described above)
 
 Adquisicion_guardado_playback.py (Loop measurement + audio playback [done via extra thread])
+
+full_env.yml (used to replicate the enviroment used to make the code via "conda env create -f full_env.yml (full path)")

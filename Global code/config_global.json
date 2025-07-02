@@ -1,0 +1,22 @@
+{
+    "fs": 44150,
+    "chunk_duration": 30,
+    "chunk_samples": 1324500,
+    "T_total": 100000,
+    "threshold": 0.01,
+    "channels": [
+        "ai0",
+        "ai1"
+    ],
+    "channel_names": [
+        "Magic",
+        "pressure"
+    ],
+    "device": "Dev2",
+    "spectro_channel_idx": 0,
+    "birdname": "Tweetie",
+    "enable_playback": true,
+    "playback_folder": "C:\\Users\\lsd\\Desktop\\tomisebalabo6\\Tweetie\\Playback",
+    "playback_repeats": 7,
+    "Route": "C:\\Users\\lsd\\Documents\\Codigo Adquisicion DAQ Git\\Acquisition-NI-USB-6212"
+}

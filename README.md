@@ -3,5 +3,7 @@ Code for efficient data acquisition using a NI USB-6212 (DAQ) developed by Sebas
 
 ## Files
 Adquisicion_NIUSB6212_Base.py (single measurement, used for testing)
+
 Adquisicion y Guardado.py (Loop measurement, does as described above)
+
 Adquisicion_guardado_playback.py (Loop measurement + audio playback [done via extra thread])

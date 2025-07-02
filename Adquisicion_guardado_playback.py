@@ -41,15 +41,13 @@ T_total = 210 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
-device = "Dev1" # NO MODIFICAR
+device = "Dev2" # NO MODIFICAR
 spectro_channel_idx = 0 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
 birdname = 'Tweetie' # Bird ID
 
 # -- Definiciones para el protocolo de playback -- 
 enable_playback = True
 playback_folder = r'C:\Users\lsd\Desktop\tomisebalabo6\Tweetie\Playback'  # Carpeta con audios a reproducir
-time_init_playback = dtime(9, 0)   # 09:00 AM
-time_end_playback  = dtime(17, 0)  # 05:00 PM
 playback_repeats = 7  # N_v: numero de veces que cada audio se reproduce
 #silence_duration = 5  # segundos de silencio entre audios
 
@@ -97,7 +95,7 @@ def playback_thread():
         # If session exhausted, start a new one
         if not session_wavs:
             session_count += 1
-            print(f"\n--- Session {session_count} ---")
+            #print(f"\n--- Session {session_count} ---")
             session_wavs = []
             for wav in wav_files:
                 session_wavs.extend([wav] * playback_repeats)
@@ -178,6 +176,8 @@ def acquisition_thread():
             save_queue.put((i, buffer.copy()))
             i += 1
 
+            print(f"[{time.strftime('%H:%M:%S')}] ✅ Saved")
+
             # Repeat wait block (if needed)
             target_time = start_time + (chunk_idx + 1) * chunk_duration
             while True:
@@ -208,7 +208,7 @@ def plotting_thread():
     win = pg.GraphicsLayoutWidget(title="DAQ Live Viewer")
     win.resize(1000, 600)
 
-    plot_waveform = win.addPlot(title=f"{channel_names[spectro_channel_idx]} waveform")
+    plot_waveform = win.addPlot(title=f"{channel_names[spectro_channel_idx]} waveform - {time.strftime('%H:%M:%S')}")
     curve_waveform = plot_waveform.plot(pen='y')
 
     win.nextRow()
@@ -226,7 +226,7 @@ def plotting_thread():
             continue
 
         # --- Waveform ---
-        
+        plot_waveform.setTitle(f"{channel_names[spectro_channel_idx]} waveform - {time.strftime('%H:%M:%S')}")
         y = data[spectro_channel_idx][::10]
         x = np.linspace(0, chunk_duration, len(y))
 
@@ -250,7 +250,7 @@ def plotting_thread():
         QtWidgets.QApplication.processEvents()
         
     print("🛑 Plotting thread finished.")
-    time.sleep(chunk_duration)
+    time.sleep(5)
     win.close()
     QApplication.quit()
 
@@ -308,48 +308,6 @@ def save_thread():
 
         except queue.Empty:
             time.sleep(0.1)
-
-
-
-# def playback_thread():
-#     print("🔊 Playback thread started.")
-#     pygame.mixer.init()
-
-#     # Get all .wav files in the folder
-#     wav_files = glob.glob(os.path.join(playback_folder, "*.wav"))
-#     if not wav_files:
-#         print("⚠️ No .wav files found in playback folder.")
-#         return
-
-#     # Repeat playback N_v times
-#     all_playbacks = []
-
-#     for n in range(len(wav_files)):
-#         i = 0
-#         wav_files_new = []
-#         while i < playback_repeats:
-#             wav_files_new.append(wav_files[n])
-#             i += 1
-#         all_playbacks.append(wav_files_new)
-
-#     random.shuffle(all_playbacks)
-
-#     for filepath in all_playbacks:
-#         if stop_event.is_set():
-#             break
-
-#         print(f"🎵 Playing: {os.path.basename(filepath)}")
-#         pygame.mixer.music.load(filepath)
-#         pygame.mixer.music.play()
-
-#         # Wait until it finishes
-#         while pygame.mixer.music.get_busy():
-#             time.sleep(0.1)
-
-#         # Silence (pause)
-#         time.sleep(silence_duration)
-
-#     print("🔇 Playback thread finished.")
 
 
 

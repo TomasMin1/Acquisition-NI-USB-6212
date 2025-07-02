@@ -31,13 +31,13 @@ def high_priority():
 
 # --- Configuración ---
 fs = 44150 # Frecuencia de sampleo
-chunk_duration = 10 # Duración de cada wav
+chunk_duration = 5 # Duración de cada wav
 chunk_samples = int(chunk_duration * fs)
-T_total = 60 # Tiempo total de medición
+T_total = 20 # Tiempo total de medición
 threshold = 0.01 # Valor de amplitud para usar de trigger
 channels = ["ai0",'ai1'] # Canales que se están midiendo
 channel_names = ["sound",'pressure'] # Nombre que aparece en el archivo wav correspondiente (Respetar orden de channels)
-device = "Dev1" # NO MODIFICAR
+device = "Dev2" # MODIFICAR
 spectro_channel_idx = 0 # Sobre qué canal plotear (orden en que son nombrados en channels arrancando de 0)
 birdname = 'Tweetie' # Bird ID
 
@@ -53,15 +53,6 @@ output_dir = os.path.join(Route, base_dir, today_str)
 
 os.makedirs(output_dir, exist_ok=True)
 
-
-
-# @njit
-# def is_above_threshold(data, channel_idx, thresh_rms, thresh_zcr):
-#     x = data[channel_idx][::10] # Toma los datos (toma cada 10 del original)
-#     rms = np.sqrt(np.mean(x ** 2)) # Calcula RMS
-#     zero_crossings = np.sum((x[1:] * x[:-1]) < 0) # Multiplica datos consecutivos y si da menos a 0 lo suma
-#     zcr = zero_crossings / len(x) # Normaliza
-#     return rms > thresh_rms and zcr > thresh_zcr
 
 
 def is_above_threshold(data, channel_idx, thresh):
@@ -121,7 +112,7 @@ def acquisition_thread():
             if is_above_threshold(buffer, spectro_channel_idx, threshold):
                 data_queue.put((i, buffer.copy()))
                 save_queue.put((i, buffer.copy()))
-                #print(f"[{time.strftime('%H:%M:%S')}] ✅ Saved chunk {i}")
+                print(f"[{time.strftime('%H:%M:%S')}] ✅ Saved")
                 i += 1
             else:
                 print(f"[{time.strftime('%H:%M:%S')}] ❌ Below threshold — skipped")
@@ -154,7 +145,7 @@ def plotting_thread():
     win = pg.GraphicsLayoutWidget(title="DAQ Live Viewer")
     win.resize(1000, 600)
 
-    plot_waveform = win.addPlot(title=f"{channel_names[spectro_channel_idx]} waveform")
+    plot_waveform = win.addPlot(title=f"{channel_names[spectro_channel_idx]} waveform - {time.strftime('%H:%M:%S')}")
     curve_waveform = plot_waveform.plot(pen='y')
 
     win.nextRow()
@@ -172,7 +163,7 @@ def plotting_thread():
             continue
 
         # --- Waveform ---
-        
+        plot_waveform.setTitle(f"{channel_names[spectro_channel_idx]} waveform - {time.strftime('%H:%M:%S')}")
         y = data[spectro_channel_idx][::10]
         x = np.linspace(0, chunk_duration, len(y))
 

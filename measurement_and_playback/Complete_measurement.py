@@ -25,7 +25,7 @@ config = {
 }
 
 # Ruta del archivo de configuración
-config_path = "Global code/config_global.json"
+config_path = "measurement_and_playback/config_global.json"
 
 # Guardar archivo JSON
 with open(config_path, 'w') as f:
@@ -38,8 +38,8 @@ tstart_playback = dtime(14, 55, 0)
 tend_playback   = dtime(14, 56, 0)
 
 # Comandos
-playback_cmd = ['python', 'Global code/playback_global.py']
-acquisition_cmd = ['python', 'Global code/adquisicion_global.py']
+playback_cmd = ['python', 'measurement_and_playback/playback_global.py']
+acquisition_cmd = ['python', 'measurement_and_playback/adquisicion_global.py']
 
 # Estado actual
 current_process = None

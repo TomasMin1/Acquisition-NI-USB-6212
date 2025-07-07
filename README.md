@@ -14,3 +14,5 @@ Includes three files, adquisicion_global, playback_global y Complete_measurement
 - Adquisicion_guardado_playback.py (Loop measurement + audio playback [done via extra thread])
 
 - full_env.yml (used to replicate the enviroment used to make the code via "conda env create -f full_env.yml (full path)")
+
+![Screenshot](Old%20Files/2025-07-06_23-05.png)

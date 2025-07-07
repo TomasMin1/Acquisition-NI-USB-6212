@@ -10,9 +10,9 @@ config = {
     "T_total": 100000,  # Tiempo total de medición (para que sea endless poner un numero mas grande que el regimen de tiempo en el que no tengo playback)
     "threshold": 0.01,  # Trigger
     "channels": ["ai0", "ai1"],
-    "channel_names": ["Magic", "pressure"],
-    "device": "Dev2",
-    "spectro_channel_idx": 0,
+    "channel_names": ["sound", "pressure"],
+    "device": "Dev1", # Ver en PC como se llama el DAQ, para el NI-USB-6212 suele ser Dev1
+    "spectro_channel_idx": 0, # Plotea el primero de la lista
     "birdname": "Tweetie",
 
     # --- Playback ---

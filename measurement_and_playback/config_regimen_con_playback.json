@@ -1,8 +1,8 @@
 {
     "fs": 44150,
-    "chunk_duration": 60,
+    "chunk_duration": 30,
     "chunk_samples": 1324500,
-    "T_total": 100000,
+    "T_total": 120,
     "threshold": 0.01,
     "channels": [
         "ai0",

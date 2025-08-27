@@ -21,7 +21,7 @@ import gc
 from scipy.io.wavfile import write
 import json
 
-with open("config_global.json", "r") as f:
+with open("config_regimen_con_playback.json", "r") as f:
     config = json.load(f)
 
 # -- Maximiza la prioridad del proceso --

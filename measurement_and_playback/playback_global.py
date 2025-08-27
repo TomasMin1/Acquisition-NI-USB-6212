@@ -28,7 +28,7 @@ import csv
 import json
 
 # Load config from JSON
-with open("Global code/config_global.json", "r") as f:
+with open("config_regimen_con_playback.json", "r") as f:
     config = json.load(f)
 
 
@@ -45,7 +45,7 @@ fs = config["fs"]
 chunk_duration = config["chunk_duration"]
 chunk_samples = int(chunk_duration * fs)
 T_total = config["T_total"]
-threshold = config["threshold"]
+threshold = 0 #config["threshold"]
 channels = config["channels"]
 channel_names = config["channel_names"]
 device = config["device"]

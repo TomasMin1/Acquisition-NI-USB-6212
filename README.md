@@ -4,7 +4,7 @@ Code for efficient data acquisition using a NI USB-6212 (DAQ) developed by Sebas
 The repository includes a finished code titled *"measurement_and_playback"* that if configured correctly should run endlessly (can be stopped with ctrl+C, more info below), as well as some assorted files (early versions, still usable for testing or finite time measurement).
 
 ## measurement_and_playback
-Includes three files, adquisicion_global, playback_global y Complete_measurement. To run the code download all three files, and run Complete_measurement. Complete_measurement works as an intermediary for adquisicion_global and playback_global, it allows the user to write a config file (json) that will be used by both codes, and depending on the configurated times, runs either adquisicion_global or playback_global. 
+Includes four python scripts, adquisicion_global, adquisicion_durante_playback, playback_global y Complete_measurement. To run the code download all files, and run Complete_measurement. Complete_measurement works as an intermediary for the other three files, it allows the user to write config files (json) for measurement with or without playback that will be used by both codes, and depending on the configurated times, runs either adquisicion_global or playback_global + adquisicion_durante_playback. 
 
 ## Asorted Files
 - Adquisicion_NIUSB6212_Base.py (single measurement, used for testing)
